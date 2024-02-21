@@ -1,0 +1,361 @@
+#include <stdint.h>   /* Declarations of uint_32 and the like */
+#include <pic32mx.h>  /* Declarations of system-specific addresses etc */
+#include "mipslab.h"  /* Declatations for these labs */
+#include <stdlib.h>   /* includes standardlibrary to use function rand()*/
+#include "standard.h" /* includes the use of functions rand()*/
+
+#define PAGE 2
+
+
+int mytime = 0x0000;
+int timeoutcount = 0;
+int timeoutcount2 = 0;
+int appleX = 7;
+int appleY = 2;
+int score;
+int stages;
+int prime = 1234567;
+
+int a = 0;
+char textstring[] = "text, more text, and even more text!";
+
+/*movement*/
+#define LEFT   1
+#define RIGHT  2
+#define UP     3
+#define DOWN   4
+#define STALE  0
+
+int direction = STALE;
+
+/*POSITION*/
+int y = 3;
+int x = 10;
+int bitpos1 = 0x03;
+int elongate = 3;
+
+
+int random1() {
+    return TMR2;
+}
+
+/*CLEANS BOARD*/
+void positionscanner( void )
+{
+ int i = 0;
+ int j = 0;
+ 
+ for(i; i < 4; i++)
+ {
+  j = 0;
+  for(j; j < 32; j++)
+  {
+    if(matrix[i][j] != matrix[y][x]) //if [i][j] != snake
+    {
+      matrix[i][j] = 0x00;
+    }
+  }
+ }
+ return;
+}
+
+void reset ( void )
+{
+  direction = STALE;
+  y = 2;
+  x = 20;
+  elongate = 3;
+  bitpos1 = 0x03;
+  score = 0;
+  positionscanner();
+  mytime = 0x0000;
+}
+
+
+void wall ( void )
+{
+  /*Upperbound*/
+
+  /*westbound*/
+  /*eastbound*/
+  if(x < 0 || x > 31) // 32 bit row
+  {
+    reset();
+  }
+
+  if(y < 0 || y > 31) // 32 bit row
+  {
+    reset();
+  }
+  /*southbound*/
+  
+
+}
+
+void setPixel(int a, int b){
+  
+  matrix[b][a] = 0x01;
+
+}
+
+void apple(){
+
+  setPixel(appleX,appleY);
+  score++;
+  elongate += 2;
+}
+
+void Eaten(){
+
+  if(x == appleX && y == appleY){
+
+    srand(TMR2); // Seed the random number generator with the current time
+
+    appleX = (rand() % 29) + 1;
+    appleY = (rand() % 2) + 1;
+    apple();
+
+  
+  }
+}
+
+/*AUTOPILOT (1 = L) (2 = R) (3 = UP) (4 = DOWN) */
+void autopilot ( void )
+{
+
+  if(direction == LEFT)
+  { 
+    x--;
+    matrix[y][x] = bitpos1;
+    matrix[y][x + elongate] = 0x00;
+    
+  }
+  if(direction == RIGHT)
+  {
+    x++;
+    matrix[y][x] = bitpos1;
+    matrix[y][x - elongate] = 0x00;
+  }
+  if(direction == UP)
+  {
+    if(bitpos1 == 0x03)
+    {
+      /*BRIDGE FOR SMOOTH JUMP*/
+      int y2 = y;
+      y--;
+      matrix[y][x] = 0x80;
+      matrix[y2][x] = 0x01;
+      bitpos1 = 0x60;
+    }
+    
+    
+    bitpos1 = (bitpos1 >> 1);
+    matrix[y][x] = bitpos1;
+    matrix[y + 1][x] = 0x00;
+    
+  }
+  if(direction == DOWN)
+  {
+    if(bitpos1 == 0x60)
+    { 
+      /*BRIDGE FOR SMOOTH JUMP*/
+      int y2 = y - 1;
+      int i = 0;
+      
+      y++;
+      bitpos1 = 0x03;
+    }
+    else{
+    bitpos1 = (bitpos1 << 1); // next bit (bitpos*2)
+    }
+    matrix[y][x] = bitpos1;
+    
+  }
+}
+/*BUTTON INPUTS*/ //GÖR OM TILL INTERRUPTS MOLIM TE
+void buttonstate ( void )
+{
+  
+  if(getbtns() == 0x4){
+    direction = LEFT;
+  }
+
+  if(getbtns() == 0x2){ //höger för tillfället 
+    direction = DOWN;
+  }
+ 
+  if(getbtns() == 0x1){
+    direction = UP;
+  }
+
+  if(btn1() == 0x2){
+    direction = RIGHT;
+  }
+}
+
+int timertest( void ) //Exercise 4 solution
+{
+  if((IFS(0) & 0x100) == 0x100)  //T2IF bit num 8
+  {
+    IFS(0) = 0;
+    return(1);
+  }
+  else
+    return 0;
+}
+
+void LEDS( void )
+{
+  volatile int * portE = (volatile int *) 0xbf886110;
+  
+  *portE = a;
+  
+  return;
+}
+
+/* Interrupt Service Routine */
+void user_isr( void ) 
+{
+  /*STATE OF SWITCH*/
+  if((IFS(0) & 0x80000))    //bit 19      0000 0000 0000 1000 0000 0000 0000 0000
+  {
+    IFSCLR(0) = 0x80000;
+    a++;
+    LEDS();
+    reset();
+  }
+
+  /*UPDATE CLOCK*/
+      
+ // if(timertest() == 1)
+ // {
+  timeoutcount++;
+  timeoutcount2++;
+ // }
+  
+  if(timeoutcount == 10)
+  {
+    timeoutcount = 0;
+    time2string( textstring, mytime );
+    //display_image(64, matrix);
+    //display_update();
+    tick( &mytime );
+    
+  }
+  IFSCLR(0) = 0x100;
+  //IFS(0) &= 0xFFFEFF;
+}
+
+
+
+/* Lab-specific initialization goes here */
+void labinit( void )
+{
+  /*LEDSINITIALIZE*/
+  volatile int * trisE = (volatile int *) 0xbf886100;
+  *trisE = (*trisE & 0xFF00);  //sätter bit 0 - 7 till Output (0)
+  volatile int * portE = (volatile int *) 0xbf886110;
+  *portE = 0x00;            //sätter value i portE --> 1 för varje lampa 1111 1111
+  //Initialized to 0 currently
+
+
+ 
+  /*INPUTINITIALIZE*/
+  TRISD = (TRISD & 0xFEF); //btn 2-4
+  TRISF = (TRISF & 0x2);   //btn1
+
+
+  /*TIMERINITIALIZE*/
+  T2CON = 0x70; // 1000 0000 0110 0000     (ON = 0) prescale = 1:256 (annars får det inte plats bitwise)
+  PR2 = (((80000000) / 256) / 10); //  80 000 000 / 256 / 100 = 1/100s --->  80 000 000 / 256 / 10 = 100 ms = 1/10 s
+  TMR2 = 0; //reset
+  T2CONSET = 0x8070; //(ON = 1) //0x8070
+  //TIMER2 = IFS(8) IEC(8)
+  
+
+  /*ENABLE INTERRUPTS*/
+  IEC(0) = (1<<8);   //enable for timer2
+  IPC(2) = 0x1F;    //4:2  1:0 priority
+  IECSET(0) = 0x80000;
+  IPCSET(4) = 0x1F000000;//0001 1111 0000 0000 0000 0000 0000 0000 28-24
+  enable_interrupt();
+ 
+
+  return;
+}
+
+
+/* This function is called repetitively from the main program */
+void labwork( void ) 
+{
+
+
+  switch(stages){
+  
+  case 0:
+
+      prime = nextprime( prime );
+      display_update();
+      display_string(0, "WELCOME TO SNAKE");
+      display_string(1, "PRESS ANY BUTTON");
+      display_string(2, "TO START GAME");
+      display_string(3, "UwU");
+
+
+      if(getbtns() == 0x4 || getbtns() == 0x2 || getbtns() == 0x1 || btn1() == 0x2){
+        reset();
+        stages = 1;
+        }
+
+      
+  break;
+
+  case 1:
+      
+    prime = nextprime( prime );
+    display_string( 0,"Score: ");
+    display_string( 1, itoaconv( score ));
+    display_string( 2, "        ");
+    display_string( 3, textstring );
+    display_update();
+    display_image(64, matrix);
+    Eaten();
+    setPixel(appleX,appleY);
+    wall();
+    matrix[y][x] = bitpos1;
+    buttonstate();
+    autopilot(); 
+
+    if(x < 0 || x > 31){
+
+      stages = 2;
+    }
+
+    if(y < 0 || y > 31) 
+    {
+    stages = 2;
+    }
+    
+  
+
+   break;
+
+   case 2:
+
+      prime = nextprime( prime );
+      display_update();
+      display_string( 0,"Game over!");
+      display_string( 1, "Score: ");
+      display_string( 2, itoaconv(score));
+      display_string( 3, "         ");
+      
+      if(getbtns() == 0x4 || getbtns() == 0x2 || getbtns() == 0x1 || btn1() == 0x2){
+        reset();
+        stages = 1;
+        }
+
+   break;
+
+  }
+
+}
